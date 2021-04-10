@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "start": "node app"
+    "start": "node application/app.js"
   },
   "description": "nodejs-webapp-express",
   "author": {
