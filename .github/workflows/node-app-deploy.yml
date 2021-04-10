@@ -1,0 +1,114 @@
+# This workflow will build and push a node.js application to an Azure Web App on every push to the master branch.
+#
+# To configure this workflow:
+# 1. Set up a secret in your repository named AZURE_WEBAPP_PUBLISH_PROFILE with the value of your Azure publish profile.
+# 2. Change the value for AZURE_WEBAPP_NAME, AZURE_WEBAPP_PACKAGE_PATH and NODE_VERSION set as environment variables  (below).
+#
+# For more information on GitHub Actions for Azure, refer to https://github.com/Azure/Actions
+# For more samples to get started with GitHub Action workflows to deploy to Azure, refer to https://github.com/Azure/actions-workflow-samples
+
+on:
+  push:
+    branches: 
+      - master
+    paths-ignore:
+      - 'infrastructure/**'
+      - 'Policies/**'
+
+env:
+  AZURE_WEBAPP_NAME: node-gh-accelerator   # set this to your application's name
+  AZURE_WEBAPP_PACKAGE_PATH: "application"      # set this to the path to your web app project, defaults to the repository root
+  NODE_VERSION: '10.x'                # set this to the node version to use
+
+jobs:
+  build:
+    name: Build and Test Node App
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@master
+    - name: Use Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v1
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+    # Build and test the project
+    - name: npm install, build, and test
+      run: |
+        cd application
+        npm install
+        npm run build --if-present
+        npm run test --if-present
+    - name: Run unit tests
+      continue-on-error: false
+      run: |
+        cd tests
+        npm install
+        gulp unittest
+
+    - name: Creating artifact directories
+      run: |
+        mkdir buildartifacts
+    # Archive build artifact
+    - name: Archive Application
+      uses: montudor/action-zip@v0.1.0
+      with:
+        args: zip -qq -r ./buildartifacts/application.zip ./application
+    # Uploading application to build artifact
+    - name: Upload Application to Build Artifact
+      continue-on-error: false
+      uses: actions/upload-artifact@v2
+      with:
+        name: buildartifacts
+        path: buildartifacts
+  deploy:
+    name: Deploy to azure web app
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    # Downloading build artifact
+    - name: Download a Build Artifact
+      uses: actions/download-artifact@v2
+      continue-on-error: false
+      with:
+        name: buildartifacts
+        path: buildartifacts
+    # Uzipping build artifacts
+    - name: unzipping build artifact
+      uses: montudor/action-zip@v0.1.0
+      with:
+       args: unzip -qq ./buildartifacts/application.zip -d .
+  
+    - name: Login to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{secrets.AZURE_CREDENTIALS}}  
+    # Deploy Node app to Azure
+    - name: 'Deploy to Azure WebApp'
+      uses: azure/webapps-deploy@v2
+      with: 
+        app-name: ${{ env.AZURE_WEBAPP_NAME }}
+        package: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
+  # Job to run functional tests
+  FunctionalTests:
+    name: Run Functional tests
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+    - uses: actions/checkout@v2
+    - name: Use Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v1
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+    # Run functional tests
+    - name: set up test environment and run tests
+      continue-on-error: false
+      run: |
+        echo "Running functional tests"
+        # cd application
+        # npm install
+        # cd ../tests
+        # npm install
+        # $Path = $env:TEMP; $Installer = "chrome_installer.exe"; Invoke-WebRequest "https://dl.google.com/chrome/install/latest/chrome_installer.exe" -OutFile $Path$Installer; Start-Process -FilePath $Path$Installer -Args "/silent /install" -Verb RunAs -Wait; Remove-Item $Path$Installer
+        # Invoke-WebRequest https://chromedriver.storage.googleapis.com/83.0.4103.39/chromedriver_win32.zip -outFile chromedriver.zip
+        # Expand-Archive -Path chromedriver.zip
+        # Remove-Item chromedriver.zip
+        # gulp functionaltest --webAppUrl https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/
